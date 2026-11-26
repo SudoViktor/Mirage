@@ -1,5 +1,6 @@
 # Mirage
-<img width="1191" height="823" alt="Знімок екрана 2026-11-26 о 09 16 47" src="https://github.com/user-attachments/assets/feb7362d-5eaf-4311-b637-34a479730cef" />
+<img width="1440" height="782" alt="4" src="https://github.com/user-attachments/assets/e583c894-ed36-4e32-a4f6-79d17266e115" />
+
 
 **Mirage** — це утиліта для macOS, яка монтує хмарне сховище Telegram як звичайний диск прямо у **Finder** через **Telegram User API** (TDLib / MTProto). Замість ручного завантаження та вивантаження файлів через клієнт месенджера можна працювати з ними як зі звичайним томом: відкривати, копіювати, переміщувати, видаляти та відновлювати бекапи бази.
 
