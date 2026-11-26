@@ -102,10 +102,46 @@ class TelegramManager: ObservableObject {
     
     private var isAppJustStarted = true
     
-    private let apiId: Int = 2681851
-    private let apiHash: String = "8b90fbb1bf11ce17bf6b9bdb7adc1353"
+    private let apiIdKey = "telegram_custom_api_id"
+        private let apiHashKey = "telegram_custom_api_hash"
+
+        private var apiId: Int? {
+            get {
+                let val = UserDefaults.standard.integer(forKey: apiIdKey)
+                return val > 0 ? val : nil
+            }
+            set {
+                if let val = newValue, val > 0 {
+                    UserDefaults.standard.set(val, forKey: apiIdKey)
+                } else {
+                    UserDefaults.standard.removeObject(forKey: apiIdKey)
+                }
+            }
+        }
+
+        private var apiHash: String {
+            get { UserDefaults.standard.string(forKey: apiHashKey)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "" }
+            set {
+                let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                if trimmed.isEmpty {
+                    UserDefaults.standard.removeObject(forKey: apiHashKey)
+                } else {
+                    UserDefaults.standard.set(trimmed, forKey: apiHashKey)
+                }
+            }
+        }
+
+        var hasApiCredentials: Bool {
+            return apiId != nil && !apiHash.isEmpty
+        }
 
     init() {
+        
+        #if DEBUG
+        self.apiId = nil
+        self.apiHash = ""
+        #endif
+        
         recreateClient()
         setupInterProcessCommunication()
         clearLocalCache()
@@ -460,23 +496,74 @@ class TelegramManager: ObservableObject {
             
     
     private func handleAuthState(type: String) {
-        switch type {
-        case "authorizationStateWaitTdlibParameters": sendTdlibParameters()
-        case "authorizationStateWaitPhoneNumber": isReadyForPhone = true; isAppJustStarted = false; if currentScreen != .enterPhone { withAnimation(.spring()) { isLoading = false; currentScreen = .welcome } } else { isLoading = false }
-        case "authorizationStateWaitCode": if isAppJustStarted { cancelLogin() } else { if currentScreen != .enterCode { withAnimation(.spring()) { isLoading = false; currentScreen = .enterCode } } else { isLoading = false } }
-        case "authorizationStateWaitPassword": if isAppJustStarted { cancelLogin() } else { if currentScreen != .enterPassword { withAnimation(.spring()) { isLoading = false; currentScreen = .enterPassword } } else { isLoading = false } }
-        case "authorizationStateReady": isAppJustStarted = false; fetchMe(); loadChatsAndStorages(); if currentScreen != .mainMenu { withAnimation(.spring()) { isLoading = false; currentScreen = .mainMenu } } else { isLoading = false }
-        case "authorizationStateLoggingOut": user = nil; clearLocalCache(); storages = []; isReadyForPhone = false; withAnimation(.spring()) { currentScreen = .welcome }
-        case "authorizationStateClosed": isLoading = false; recreateClient()
-        default: break
+            switch type {
+            case "authorizationStateWaitTdlibParameters":
+                sendTdlibParameters()
+            case "authorizationStateWaitPhoneNumber":
+                isReadyForPhone = true
+                isAppJustStarted = false
+                if currentScreen != .enterPhone {
+                    withAnimation(.spring()) { isLoading = false; currentScreen = .welcome }
+                } else {
+                    isLoading = false
+                }
+            case "authorizationStateWaitCode":
+                if isAppJustStarted { cancelLogin() }
+                else if currentScreen != .enterCode { withAnimation(.spring()) { isLoading = false; currentScreen = .enterCode } }
+                else { isLoading = false }
+            case "authorizationStateWaitPassword":
+                if isAppJustStarted { cancelLogin() }
+                else if currentScreen != .enterPassword { withAnimation(.spring()) { isLoading = false; currentScreen = .enterPassword } }
+                else { isLoading = false }
+            case "authorizationStateReady":
+                isAppJustStarted = false
+                fetchMe()
+                loadChatsAndStorages()
+                if currentScreen != .mainMenu { withAnimation(.spring()) { isLoading = false; currentScreen = .mainMenu } }
+                else { isLoading = false }
+            case "authorizationStateLoggingOut":
+                user = nil; clearLocalCache(); storages = []; isReadyForPhone = false
+                withAnimation(.spring()) { currentScreen = .welcome }
+            case "authorizationStateClosed":
+                isLoading = false
+                recreateClient()
+            default:
+                break
+            }
         }
-    }
 
-    private func sendTdlibParameters() {
-        let paths = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)
-        let dir = paths[0].appendingPathComponent("UnlimBoxTD").path
-        try? client.setTdlibParameters(apiHash: apiHash, apiId: apiId, applicationVersion: "2.0", databaseDirectory: dir, databaseEncryptionKey: Data(), deviceModel: "MacBook Air", filesDirectory: dir + "_files", systemLanguageCode: "uk", systemVersion: "macOS", useChatInfoDatabase: true, useFileDatabase: true, useMessageDatabase: true, useSecretChats: false, useTestDc: false) { _ in }
-    }
+        private func sendTdlibParameters() {
+            guard let currentApiId = apiId, !apiHash.isEmpty else {
+                DispatchQueue.main.async { [weak self] in
+                    self?.isLoading = false
+                    if self?.currentScreen == .initializing {
+                        withAnimation(.spring()) {
+                            self?.currentScreen = .welcome
+                        }
+                    }
+                }
+                return
+            }
+
+            let paths = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)
+            let dir = paths[0].appendingPathComponent("UnlimBoxTD").path
+            try? client.setTdlibParameters(
+                apiHash: apiHash,
+                apiId: currentApiId,
+                applicationVersion: "2.0",
+                databaseDirectory: dir,
+                databaseEncryptionKey: Data(),
+                deviceModel: "MacBook Air",
+                filesDirectory: dir + "_files",
+                systemLanguageCode: "uk",
+                systemVersion: "macOS",
+                useChatInfoDatabase: true,
+                useFileDatabase: true,
+                useMessageDatabase: true,
+                useSecretChats: false,
+                useTestDc: false
+            ) { _ in }
+        }
 
     private func loadChatsAndStorages() {
         try? client.loadChats(chatList: .chatListMain, limit: 100) { [weak self] _ in self?.fetchStorages() }
@@ -1017,7 +1104,94 @@ class TelegramManager: ObservableObject {
             }
         }
     
-    func startAuthFlow() { errorMessage = nil; if isReadyForPhone { withAnimation { currentScreen = .enterPhone } } else { isLoading = true } }
+    private func showApiCredentialsAlert(allowCancel: Bool = true) -> Bool {
+            let alert = NSAlert()
+            alert.alertStyle = hasApiCredentials ? .informational : .warning
+            alert.messageText = hasApiCredentials ? "Зміна api_id та api_hash" : "Потрібні api_id та api_hash"
+            alert.informativeText = "Введіть api_id та api_hash, отримані на сайті my.telegram.org. Без обох заповнених полів авторизація недоступна."
+            alert.addButton(withTitle: "Зберегти")
+            alert.addButton(withTitle: "Закрити")
+
+            let stack = NSStackView(frame: NSRect(x: 0, y: 0, width: 320, height: 64))
+            stack.orientation = .vertical
+            stack.spacing = 10
+
+            let apiIdField = NSTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
+            apiIdField.placeholderString = "Введіть api_id (наприклад, 1234567)"
+            if let existingId = apiId {
+                apiIdField.stringValue = String(existingId)
+            }
+
+            let apiHashField = NSTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
+            apiHashField.placeholderString = "Введіть api_hash"
+            apiHashField.stringValue = apiHash
+
+            stack.addArrangedSubview(apiIdField)
+            stack.addArrangedSubview(apiHashField)
+            alert.accessoryView = stack
+
+            if let window = NSApp.keyWindow ?? NSApp.mainWindow {
+                window.makeFirstResponder(apiIdField)
+            }
+
+            while true {
+                let response = alert.runModal()
+
+                // Натиснули "Закрити" (або Esc) — просто виходимо без повторного відкриття
+                if response != .alertFirstButtonReturn {
+                    return false
+                }
+
+                let rawId = apiIdField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                let rawHash = apiHashField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+
+                if let parsedId = Int(rawId), parsedId > 0, !rawHash.isEmpty {
+                    let isChanged = (self.apiId != parsedId || self.apiHash != rawHash)
+                    self.apiId = parsedId
+                    self.apiHash = rawHash
+
+                    if isChanged {
+                        self.applyNewApiCredentials()
+                    } else if !self.isReadyForPhone {
+                        self.sendTdlibParameters()
+                    }
+                    return true
+                }
+
+                // Якщо натиснули "Зберегти", але поля порожні або api_id некоректний
+                alert.informativeText = "Заповніть обидва поля коректно (api_id має бути числом, api_hash — не порожнім) або натисніть «Закрити»."
+            }
+        }
+
+        private func applyNewApiCredentials() {
+            errorMessage = nil
+            if isReadyForPhone {
+                isReadyForPhone = false
+                isLoading = true
+                try? client.close { _ in }
+            } else {
+                sendTdlibParameters()
+            }
+        }
+
+        func editApiCredentials() {
+            _ = showApiCredentialsAlert(allowCancel: hasApiCredentials)
+        }
+
+    func startAuthFlow() {
+            errorMessage = nil
+            if !hasApiCredentials {
+                guard showApiCredentialsAlert() else { return }
+            }
+
+            if isReadyForPhone {
+                withAnimation { currentScreen = .enterPhone }
+            } else {
+                isLoading = true
+                sendTdlibParameters()
+            }
+        }
+    
     func setPhoneNumber(_ phone: String) { isLoading = true; errorMessage = nil; try? client.setAuthenticationPhoneNumber(phoneNumber: phone, settings: nil) { [weak self] r in DispatchQueue.main.async { if case .failure(_) = r { self?.isLoading = false; self?.errorMessage = "Помилка номеру" } } } }
     func checkCode(_ code: String) { isLoading = true; errorMessage = nil; try? client.checkAuthenticationCode(code: code) { [weak self] r in DispatchQueue.main.async { if case .failure(_) = r { self?.isLoading = false; self?.errorMessage = "Невірний код" } } } }
     func checkPassword(_ pwd: String) { isLoading = true; errorMessage = nil; try? client.checkAuthenticationPassword(password: pwd) { [weak self] r in DispatchQueue.main.async { if case .failure(_) = r { self?.isLoading = false; self?.errorMessage = "Невірний пароль" } } } }

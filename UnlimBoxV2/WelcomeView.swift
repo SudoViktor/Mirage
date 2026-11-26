@@ -6,6 +6,24 @@ struct WelcomeView: View {
     
     var body: some View {
         VStack(spacing: 0) {
+            HStack {
+                Spacer()
+                Button(action: {
+                    tgManager.editApiCredentials()
+                }) {
+                    Text("Змінити ключі")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Color.secondary.opacity(0.12))
+                        .cornerRadius(6)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.top, 14)
+            .padding(.trailing, 18)
+            
             Spacer()
             
             // 📦 ІКОНКА
@@ -17,7 +35,7 @@ struct WelcomeView: View {
                 .shadow(color: Color.black.opacity(0.06), radius: 24, x: 0, y: 12)
                 .padding(.bottom, 14)
             
-            // 📝 ГОЛОВНИЙ ЗАГОЛОВОК (Тепер тут тільки назва)
+            // 📝 ГОЛОВНИЙ ЗАГОЛОВОК
             Text("Mirage")
                 .font(.system(size: 36, weight: .bold, design: .rounded))
             
@@ -46,12 +64,12 @@ struct WelcomeView: View {
                 
                 // 📝 МАЛЕНЬКИЙ ОПИС ПІД КНОПКОЮ
                 Text("Файлове сховище Telegram для вашого Mac")
-                    .font(.caption) // Зробили меншим (приблизно 11-12pt)
+                    .font(.caption)
                     .lineSpacing(1)
                     .multilineTextAlignment(.center)
-                    .foregroundColor(.secondary.opacity(0.8)) // Трохи приглушили колір
+                    .foregroundColor(.secondary.opacity(0.8))
             }
-            .padding(.bottom, 54) // Відступ від нижнього краю вікна
+            .padding(.bottom, 54)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
